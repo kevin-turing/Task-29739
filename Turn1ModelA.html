@@ -1,164 +1,368 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>THEMIS & ARTEMIS Mission Visualization</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.3.0/d3.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@observablehq/plot@0.6"></script>
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"
-    />
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relic Hunter</title>
     <style>
-      body {
-        font-family: Arial, sans-serif;
-        background: #000;
-        color: #fff;
-        overflow: hidden;
-      }
-      #visualization {
-        width: 100vw;
-        height: 100vh;
-        position: relative;
-      }
-      .orbit {
-        stroke: #fff;
-        fill: none;
-        stroke-width: 1;
-      }
-      .probe {
-        fill: #ffd700;
-        stroke: #000;
-        stroke-width: 0.5;
-      }
-      .info-box {
-        position: absolute;
-        background: rgba(0, 0, 0, 0.8);
-        padding: 10px;
-        border-radius: 5px;
-        display: none;
-      }
-      .phase-button {
-        background-color: #4caf50; /* Green */
-        border: none;
-        color: white;
-        padding: 15px 32px;
-        text-align: center;
-        text-decoration: none;
-        display: inline-block;
-        font-size: 16px;
-        margin: 4px 2px;
-        cursor: pointer;
-      }
-    </style>
-  </head>
-  <body>
-    <div id="visualization"></div>
-    <div id="info" class="info-box"></div>
-    <div style="position: absolute; bottom: 10px; left: 10px">
-      <button class="phase-button" onclick="showPhase('Tail')">
-        Tail Phase
-      </button>
-      <button class="phase-button" onclick="showPhase('Dawn')">
-        Dawn Phase
-      </button>
-      <button class="phase-button" onclick="showPhase('Dayside')">
-        Dayside Phase
-      </button>
-      <button class="phase-button" onclick="showPhase('Dusk')">
-        Dusk Phase
-      </button>
-    </div>
-
-    <script>
-      const width = window.innerWidth,
-        height = window.innerHeight;
-      const svg = d3
-        .select('#visualization')
-        .append('svg')
-        .attr('width', width)
-        .attr('height', height);
-
-      const phases = {
-        Tail: { apogee: 12, sector: 'nightside', mmsPosition: 'dawn' },
-        Dawn: { apogee: 12, sector: 'dawnside', mmsPosition: 'dayside' },
-        Dayside: { apogee: 12, sector: 'dayside', mmsPosition: 'dusk' },
-        Dusk: { apogee: 13, sector: 'duskside', mmsPosition: 'tail' },
-      };
-
-      function drawOrbits(phase) {
-        svg.selectAll('*').remove();
-        const phaseData = phases[phase];
-        const scale = d3
-          .scaleLinear()
-          .domain([0, 30])
-          .range([0, height / 2 - 50]);
-        const center = { x: width / 2, y: height / 2 };
-
-        // Earth
-        svg
-          .append('circle')
-          .attr('cx', center.x)
-          .attr('cy', center.y)
-          .attr('r', 20)
-          .attr('fill', 'blue');
-
-        // Draw THEMIS orbits
-        for (let i = 0; i < 3; i++) {
-          const r = scale(phaseData.apogee + i * 0.5);
-          svg
-            .append('ellipse')
-            .attr('class', 'orbit')
-            .attr('cx', center.x)
-            .attr('cy', center.y)
-            .attr('rx', r)
-            .attr('ry', r * 0.5)
-            .attr('transform', `rotate(${i * 30}, ${center.x}, ${center.y})`);
-
-          // Probe position
-          svg
-            .append('circle')
-            .attr('class', 'probe')
-            .attr('cx', center.x + r * Math.cos((i * Math.PI) / 6))
-            .attr('cy', center.y + r * 0.5 * Math.sin((i * Math.PI) / 6))
-            .attr('r', 5)
-            .on('mouseover', function () {
-              showInfo(phase, i);
-            })
-            .on('mouseout', hideInfo);
+        body {
+            background: #000;
+            color: #0ff;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 20px;
         }
+        #game-container {
+            display: grid;
+            grid-template-columns: repeat(16, 30px);
+            gap: 1px;
+            background: #0ff;
+            padding: 1px;
+        }
+        .cell {
+            width: 30px;
+            height: 30px;
+            background: #222;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .cell:hover { background: #333; }
+        .revealed { background: #555; }
+        .flag { color: red; }
+        .trap { background: purple; }
+        #hud {
+            margin-top: 20px;
+            width: 480px;
+            display: flex;
+            justify-content: space-between;
+        }
+        button {
+            background: #0ff;
+            border: none;
+            padding: 10px 20px;
+            margin-top: 10px;
+            cursor: pointer;
+            color: #000;
+        }
+        #timer, #health, #score, #scanners {
+            color: #0ff;
+            font-size: 1.2em;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.4);
+        }
+        .modal-content {
+            background-color: #000;
+            margin: 15% auto;
+            padding: 20px;
+            border: 1px solid #0ff;
+            width: 80%;
+            max-width: 500px;
+        }
+        .close {
+            color: #0ff;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .close:hover, .close:focus {
+            color: #fff;
+            text-decoration: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
 
-        // MMS position indicator
-        svg
-          .append('text')
-          .attr('x', width - 100)
-          .attr('y', 50)
-          .text(`MMS: ${phaseData.mmsPosition} sector`)
-          .attr('fill', 'white');
-      }
+<div id="modal-tutorial" class="modal">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2>Welcome to Relic Hunter!</h2>
+        <p>Here's how to play:</p>
+        <ul>
+            <li>Click a cell to reveal what's underneath.</li>
+            <li>Numbers indicate how many relics are adjacent (including diagonally).</li>
+            <li>Right-click to flag potential relics. Flagging correctly earns points, incorrectly loses points and health.</li>
+            <li>Use artifact scanners to reveal a 3x3 area.</li>
+            <li>Beware of traps! They distort nearby numbers.</li>
+            <li>Find all relics to win or lose all health to lose.</li>
+            <li>Levels get harder with more relics and traps.</li>
+            <li>Finish quickly for bonus points!</li>
+        </ul>
+    </div>
+</div>
 
-      function showInfo(phase, probeIndex) {
-        d3.select('#info')
-          .style('display', 'block')
-          .html(
-            `Phase: ${phase}<br>Probe ${probeIndex + 3}: Studying ${
-              phaseData.sector
-            } interactions`
-          )
-          .style('left', d3.event.pageX + 10 + 'px')
-          .style('top', d3.event.pageY - 28 + 'px');
-      }
+<div id="modal-menu" class="modal" style="display: block;">
+    <div class="modal-content">
+        <h2>Relic Hunter</h2>
+        <button onclick="startGame()">Start Game</button>
+    </div>
+</div>
 
-      function hideInfo() {
-        d3.select('#info').style('display', 'none');
-      }
+<div id="game" style="display: none;">
+    <div id="game-container"></div>
+    <div id="hud">
+        <div>Health: <span id="health">100%</span></div>
+        <div>Score: <span id="score">0</span></div>
+        <div>Scanners: <span id="scanners">3</span></div>
+        <div>Time: <span id="timer">5:00</span></div>
+    </div>
+</div>
 
-      function showPhase(phase) {
-        drawOrbits(phase);
-      }
+<script>
+let grid, relics, traps, level = 1, health = 100, score = 0, scanners = 3, gameOver = false;
+let timer, timeLeft = 300; // 5 minutes in seconds
 
-      // Initial draw
-      drawOrbits('Tail');
-    </script>
-  </body>
+function initializeGame() {
+    const container = document.getElementById('game-container');
+    grid = [];
+    for(let i = 0; i < 16; i++) {
+        grid[i] = [];
+        for(let j = 0; j < 16; j++) {
+            const cell = document.createElement('div');
+            cell.classList.add('cell');
+            cell.dataset.x = i;
+            cell.dataset.y = j;
+            cell.addEventListener('click', revealCell);
+            cell.addEventListener('contextmenu', function(e) {
+                e.preventDefault();
+                toggleFlag(cell);
+            });
+            grid[i][j] = {element: cell, isRevealed: false, isFlagged: false, content: 'empty'};
+            container.appendChild(cell);
+        }
+    }
+    placeItems();
+    updateNumbers();
+}
+
+function placeItems() {
+    const totalCells = 256;
+    let toPlace = {relic: 30 + (level * 2), trap: 15 + level};
+    if(toPlace.relic > 50) toPlace.relic = 50;
+    if(toPlace.trap > 25) toPlace.trap = 25;
+
+    while(toPlace.relic > 0 || toPlace.trap > 0) {
+        const x = Math.floor(Math.random() * 16);
+        const y = Math.floor(Math.random() * 16);
+        if(grid[x][y].content === 'empty') {
+            if(toPlace.relic > 0 && Math.random() > 0.5) {
+                grid[x][y].content = 'relic';
+                toPlace.relic--;
+            } else if(toPlace.trap > 0) {
+                grid[x][y].content = 'trap';
+                toPlace.trap--;
+            }
+        }
+    }
+}
+
+function updateNumbers() {
+    for(let i = 0; i < 16; i++) {
+        for(let j = 0; j < 16; j++) {
+            if(grid[i][j].content === 'empty' || grid[i][j].content === 'trap') {
+                let count = 0;
+                for(let x = -1; x <= 1; x++) {
+                    for(let y = -1; y <= 1; y++) {
+                        if(i + x >= 0 && i + x < 16 && j + y >= 0 && j + y < 16) {
+                            if(grid[i + x][j + y].content === 'relic') count++;
+                        }
+                    }
+                }
+                if(grid[i][j].content === 'trap') {
+                    // Trap effect: randomize number or make it misleading
+                    grid[i][j].number = Math.floor(Math.random() * 4);
+                } else {
+                    grid[i][j].number = count;
+                }
+            }
+        }
+    }
+}
+
+function revealCell(event) {
+    if(gameOver) return;
+    const cell = event.target;
+    const x = parseInt(cell.dataset.x);
+    const y = parseInt(cell.dataset.y);
+    
+    if(grid[x][y].isFlagged || grid[x][y].isRevealed) return;
+
+    if(grid[x][y].content === 'trap') {
+        triggerTrap(x, y);
+        return;
+    }
+
+    grid[x][y].isRevealed = true;
+    cell.classList.add('revealed');
+    if(grid[x][y].content === 'relic') {
+        cell.textContent = 'R';
+        checkWin();
+    } else if(grid[x][y].number === 0) {
+        revealAdjacent(x, y);
+    } else {
+        cell.textContent = grid[x][y].number;
+    }
+
+    if(scanners > 0 && grid[x][y].content === 'empty') {
+        useScanner(x, y);
+    }
+}
+
+function revealAdjacent(x, y) {
+    for(let i = -1; i <= 1; i++) {
+        for(let j = -1; j <= 1; j++) {
+            const newX = x + i, newY = y + j;
+            if(newX >= 0 && newX < 16 && newY >= 0 && newY < 16 && !grid[newX][newY].isRevealed) {
+                revealCell(grid[newX][newY].element);
+            }
+        }
+    }
+}
+
+function toggleFlag(cell) {
+    if(gameOver || cell.classList.contains('revealed')) return;
+    const x = parseInt(cell.dataset.x);
+    const y = parseInt(cell.dataset.y);
+    
+    if(grid[x][y].isFlagged) {
+        cell.textContent = '';
+        grid[x][y].isFlagged = false;
+        if(grid[x][y].content === 'relic') {
+            score -= 10;
+        } else {
+            score += 5;
+            health += 10;
+        }
+    } else {
+        cell.textContent = 'F';
+        cell.classList.add('flag');
+        grid[x][y].isFlagged = true;
+        if(grid[x][y].content === 'relic') {
+            score += 10;
+        } else {
+            score -= 5;
+            health -= 10;
+            checkHealth();
+        }
+    }
+    updateHUD();
+}
+
+function triggerTrap(x, y) {
+    for(let i = -2; i <= 2; i++) {
+        for(let j = -2; j <= 2; j++) {
+            const nx = x + i, ny = y + j;
+            if(nx >= 0 && nx < 16 && ny >= 0 && ny < 16) {
+                if(Math.random() < 0.5) { // 50% chance to alter number
+                    grid[nx][ny].number = Math.floor(Math.random() * 4);
+                    if(grid[nx][ny].isRevealed && grid[nx][ny].content === 'empty') {
+                        grid[nx][ny].element.textContent = grid[nx][ny].number;
+                    }
+                }
+            }
+        }
+    }
+    grid[x][y].element.classList.add('trap');
+    grid[x][y].element.textContent = 'T';
+}
+
+function useScanner(x, y) {
+    if(scanners > 0) {
+        scanners--;
+        for(let i = -1; i <= 1; i++) {
+            for(let j = -1; j <= 1; j++) {
+                const nx = x + i, ny = y + j;
+                if(nx >= 0 && nx < 16 && ny >= 0 && ny < 16 && !grid[nx][ny].isRevealed) {
+                    grid[nx][ny].isRevealed = true;
+                    grid[nx][ny].element.classList.add('revealed');
+                    if(grid[nx][ny].content === 'relic') {
+                        grid[nx][ny].element.textContent = 'R';
+                    } else {
+                        grid[nx][ny].element.textContent = grid[nx][ny].number;
+                    }
+                }
+            }
+        }
+        updateHUD();
+    }
+}
+
+function updateHUD() {
+    document.getElementById('health').textContent = health + '%';
+    document.getElementById('score').textContent = score;
+    document.getElementById('scanners').textContent = scanners;
+}
+
+function checkWin() {
+    let foundRelics = 0;
+    grid.forEach(row => row.forEach(cell => {
+        if(cell.content === 'relic' && cell.isRevealed) foundRelics++;
+    }));
+    if(foundRelics === (30 + (level * 2)) || foundRelics === 50) {
+        gameOver = true;
+        clearInterval(timer);
+        alert(`Level ${level} Cleared! Score: ${score + (timeLeft * 10)}`);
+        level++;
+        if(level <= 5) { // Assuming 5 levels for this example
+            startGame();
+        } else {
+            alert("Congratulations! You've completed all levels!");
+        }
+    }
+}
+
+function checkHealth() {
+    if(health <= 0) {
+        gameOver = true;
+        clearInterval(timer);
+        alert('Game Over! You ran out of health.');
+    }
+}
+
+function startTimer() {
+    timer = setInterval(() => {
+        timeLeft--;
+        if(timeLeft <= 0) {
+            clearInterval(timer);
+            gameOver = true;
+            alert('Time Up! Game Over.');
+            return;
+        }
+        const minutes = Math.floor(timeLeft / 60);
+        const seconds = timeLeft % 60;
+        document.getElementById('timer').textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+    }, 1000);
+}
+
+function startGame() {
+    document.getElementById('modal-menu').style.display = 'none';
+    document.getElementById('game').style.display = 'block';
+    initializeGame();
+    startTimer();
+    updateHUD();
+}
+
+document.getElementById('modal-tutorial').getElementsByClassName('close')[0].onclick = function() {
+    document.getElementById('modal-tutorial').style.display = 'none';
+};
+
+window.onload = function() {
+    document.getElementById('modal-tutorial').style.display = 'block';
+};
+</script>
+
+</body>
 </html>

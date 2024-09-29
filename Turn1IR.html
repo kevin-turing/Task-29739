@@ -1,1 +1,481 @@
-T1IR
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relic Hunter</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #000;
+            color: #0ff;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #game-container {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+        }
+        #grid {
+            display: grid;
+            grid-template-columns: repeat(16, 30px);
+            gap: 1px;
+            background-color: #001;
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px #0ff;
+        }
+        .cell {
+            width: 30px;
+            height: 30px;
+            background-color: #003;
+            border: 1px solid #0ff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            user-select: none;
+        }
+        .cell:hover {
+            background-color: #006;
+        }
+        .cell.revealed {
+            background-color: #004;
+        }
+        .cell.flagged::after {
+            content: "🚩";
+        }
+        .cell.relic::after {
+            content: "💎";
+        }
+        .cell.trap::after {
+            content: "💥";
+        }
+        .cell.health::after {
+            content: "❤️";
+        }
+        .cell.timeFreeze::after {
+            content: "⏱️";
+        }
+        #hud {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 500px;
+            margin-bottom: 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 10px;
+        }
+        #hud div {
+            text-align: center;
+        }
+        #main-menu, #tutorial, #game-over {
+            background-color: rgba(0, 0, 0, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        button {
+            background-color: #0ff;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            margin: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        button:hover {
+            background-color: #00f;
+            color: #fff;
+        }
+        #tutorial {
+            display: none;
+            max-width: 600px;
+        }
+        #game-over {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="main-menu">
+        <h1>Relic Hunter</h1>
+        <button id="start-game">Start Game</button>
+        <button id="show-tutorial">Tutorial</button>
+    </div>
+
+    <div id="tutorial">
+        <h2>How to Play Relic Hunter</h2>
+        <p>Welcome to Relic Hunter! Your mission is to find hidden relics in a 16x16 grid.</p>
+        <ul>
+            <li>Left-click on cells to reveal them. The number shown indicates how many relics are in adjacent cells.</li>
+            <li>Right-click to flag a cell you think contains a relic.</li>
+            <li>Correct flags earn 10 points, wrong flags cost 5 points and 10% health.</li>
+            <li>Watch out for traps! They mess up the numbers in a 5x5 area.</li>
+            <li>Double-click to use an artifact scanner in a 3x3 area. You have 3 scanners per level.</li>
+            <li>Each level has a 5-minute time limit. Finish faster for bonus points!</li>
+            <li>The game gets harder as you progress, with more relics and traps each level.</li>
+            <li>Look out for power-ups to help you on your quest!</li>
+        </ul>
+        <p>Good luck, Relic Hunter!</p>
+        <button id="close-tutorial">Back to Menu</button>
+    </div>
+
+    <div id="game-container">
+        <div id="hud">
+            <div id="level">Level: 1</div>
+            <div id="score">Score: 0</div>
+            <div id="health">Health: 100%</div>
+            <div id="scanners">Scanners: 3</div>
+            <div id="timer">Time: 5:00</div>
+        </div>
+        <div id="grid"></div>
+    </div>
+
+    <div id="game-over">
+        <h2>Game Over</h2>
+        <p id="final-score"></p>
+        <p id="final-level"></p>
+        <button id="restart-game">Play Again</button>
+    </div>
+
+    <script>
+        const grid = document.getElementById('grid');
+        const gameContainer = document.getElementById('game-container');
+        const mainMenu = document.getElementById('main-menu');
+        const tutorial = document.getElementById('tutorial');
+        const gameOver = document.getElementById('game-over');
+        const startGameBtn = document.getElementById('start-game');
+        const showTutorialBtn = document.getElementById('show-tutorial');
+        const closeTutorialBtn = document.getElementById('close-tutorial');
+        const restartGameBtn = document.getElementById('restart-game');
+        const levelDisplay = document.getElementById('level');
+        const scoreDisplay = document.getElementById('score');
+        const healthDisplay = document.getElementById('health');
+        const scannersDisplay = document.getElementById('scanners');
+        const timerDisplay = document.getElementById('timer');
+
+        let gameState = {
+            level: 1,
+            score: 0,
+            health: 100,
+            scanners: 3,
+            timeLeft: 300,
+            relics: 30,
+            traps: 15,
+            grid: [],
+            revealedCells: 0,
+            gameInterval: null
+        };
+
+        function initializeGame() {
+            gameState = {
+                level: 1,
+                score: 0,
+                health: 100,
+                scanners: 3,
+                timeLeft: 300,
+                relics: 30,
+                traps: 15,
+                grid: [],
+                revealedCells: 0,
+                gameInterval: null
+            };
+            createGrid();
+            updateHUD();
+            startTimer();
+        }
+
+        function createGrid() {
+            grid.innerHTML = '';
+            gameState.grid = [];
+            gameState.revealedCells = 0;
+
+            // Create empty grid
+            for (let i = 0; i < 16; i++) {
+                gameState.grid[i] = [];
+                for (let j = 0; j < 16; j++) {
+                    gameState.grid[i][j] = { type: 'empty', revealed: false, flagged: false };
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.dataset.row = i;
+                    cell.dataset.col = j;
+                    cell.addEventListener('click', () => revealCell(i, j));
+                    cell.addEventListener('contextmenu', (e) => {
+                        e.preventDefault();
+                        flagCell(i, j);
+                    });
+                    cell.addEventListener('dblclick', () => useScanner(i, j));
+                    grid.appendChild(cell);
+                }
+            }
+
+            // Place relics
+            for (let i = 0; i < gameState.relics; i++) {
+                placeItem('relic');
+            }
+
+            // Place traps
+            for (let i = 0; i < gameState.traps; i++) {
+                placeItem('trap');
+            }
+
+            // Calculate adjacent relics
+            for (let i = 0; i < 16; i++) {
+                for (let j = 0; j < 16; j++) {
+                    if (gameState.grid[i][j].type === 'empty') {
+                        gameState.grid[i][j].adjacentRelics = countAdjacentRelics(i, j);
+                    }
+                }
+            }
+
+            // Place power-ups
+            placeItem('health');
+            placeItem('timeFreeze');
+        }
+
+        function placeItem(type) {
+            let row, col;
+            do {
+                row = Math.floor(Math.random() * 16);
+                col = Math.floor(Math.random() * 16);
+            } while (gameState.grid[row][col].type !== 'empty' || (type === 'relic' && hasAdjacentRelic(row, col)));
+
+            gameState.grid[row][col].type = type;
+        }
+
+        function hasAdjacentRelic(row, col) {
+            for (let i = Math.max(0, row - 1); i <= Math.min(15, row + 1); i++) {
+                for (let j = Math.max(0, col - 1); j <= Math.min(15, col + 1); j++) {
+                    if (gameState.grid[i][j].type === 'relic') {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function countAdjacentRelics(row, col) {
+            let count = 0;
+            for (let i = Math.max(0, row - 1); i <= Math.min(15, row + 1); i++) {
+                for (let j = Math.max(0, col - 1); j <= Math.min(15, col + 1); j++) {
+                    if (gameState.grid[i][j].type === 'relic') {
+                        count++;
+                    }
+                }
+            }
+            return count;
+        }
+
+        function revealCell(row, col) {
+            const cell = gameState.grid[row][col];
+            if (cell.revealed || cell.flagged) return;
+
+            cell.revealed = true;
+            gameState.revealedCells++;
+            updateCellAppearance(row, col);
+
+            switch (cell.type) {
+                case 'relic':
+                    gameState.score += 10;
+                    gameState.relics--;
+                    break;
+                case 'trap':
+                    activateTrap(row, col);
+                    break;
+                case 'health':
+                    gameState.health = Math.min(100, gameState.health + 20);
+                    break;
+                case 'timeFreeze':
+                    gameState.timeLeft += 60;
+                    break;
+            }
+
+            if (cell.type === 'empty' && cell.adjacentRelics === 0) {
+                revealAdjacentCells(row, col);
+            }
+
+            updateHUD();
+            checkGameEnd();
+        }
+
+        function revealAdjacentCells(row, col) {
+            for (let i = Math.max(0, row - 1); i <= Math.min(15, row + 1); i++) {
+                for (let j = Math.max(0, col - 1); j <= Math.min(15, col + 1); j++) {
+                    if (!gameState.grid[i][j].revealed) {
+                        revealCell(i, j);
+                    }
+                }
+            }
+        }
+
+        function flagCell(row, col) {
+            const cell = gameState.grid[row][col];
+            if (cell.revealed) return;
+
+            cell.flagged = !cell.flagged;
+            updateCellAppearance(row, col);
+
+            if (cell.flagged) {
+                if (cell.type === 'relic') {
+                    gameState.score += 10;
+                    gameState.relics--;
+                } else {
+                    gameState.score = Math.max(0, gameState.score - 5);
+                    gameState.health = Math.max(0, gameState.health - 10);
+                }
+            } else {
+                if (cell.type === 'relic') {
+                    gameState.score = Math.max(0, gameState.score - 10);
+                    gameState.relics++;
+                } else {
+                    gameState.score += 5;
+                    gameState.health = Math.min(100, gameState.health + 10);
+                }
+            }
+
+            updateHUD();
+            checkGameEnd();
+        }
+
+        function activateTrap(row, col) {
+            for (let i = Math.max(0, row - 2); i <= Math.min(15, row + 2); i++) {
+                for (let j = Math.max(0, col - 2); j <= Math.min(15, col + 2); j++) {
+                    if (gameState.grid[i][j].type === 'empty') {
+                        gameState.grid[i][j].adjacentRelics = Math.floor(Math.random() * 9);
+                        if (gameState.grid[i][j].revealed) {
+                            updateCellAppearance(i, j);
+                        }
+                    }
+                }
+            }
+        }
+
+        function updateCellAppearance(row, col) {
+            const cell = document.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+            const cellData = gameState.grid[row][col];
+
+            cell.className = 'cell';
+            if (cellData.revealed) {
+                cell.classList.add('revealed');
+                if (cellData.type === 'relic') {
+                    cell.classList.add('relic');
+                } else if (cellData.type === 'trap') {
+                    cell.classList.add('trap');
+                } else if (cellData.type === 'health') {
+                    cell.classList.add('health');
+                } else if (cellData.type === 'timeFreeze') {
+                    cell.classList.add('timeFreeze');
+                } else if (cellData.type === 'empty') {
+                    cell.textContent = cellData.adjacentRelics > 0 ? cellData.adjacentRelics : '';
+                }
+            } else if (cellData.flagged) {
+                cell.classList.add('flagged');
+            }
+        }
+
+        function updateHUD() {
+            levelDisplay.textContent = `Level: ${gameState.level}`;
+            scoreDisplay.textContent = `Score: ${gameState.score}`;
+            healthDisplay.textContent = `Health: ${gameState.health}%`;
+            scannersDisplay.textContent = `Scanners: ${gameState.scanners}`;
+        }
+
+        function startTimer() {
+            gameState.gameInterval = setInterval(() => {
+                gameState.timeLeft--;
+                const minutes = Math.floor(gameState.timeLeft / 60);
+                const seconds = gameState.timeLeft % 60;
+                timerDisplay.textContent = `Time: ${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+                if (gameState.timeLeft <= 0) {
+                    endGame(false);
+                }
+            }, 1000);
+        }
+
+        function checkGameEnd() {
+            if (gameState.relics === 0) {
+                const timeBonus = Math.floor(gameState.timeLeft / 2);
+                gameState.score += timeBonus;
+                endGame(true);
+            } else if (gameState.health <= 0) {
+                endGame(false);
+            }
+        }
+
+        function endGame(won) {
+            clearInterval(gameState.gameInterval);
+            gameContainer.style.display = 'none';
+            gameOver.style.display = 'block';
+            document.getElementById('final-score').textContent = `Final Score: ${gameState.score}`;
+            document.getElementById('final-level').textContent = `Final Level: ${gameState.level}`;
+            if (won) {
+                document.getElementById('game-over').querySelector('h2').textContent = 'Level Complete!';
+            } else {
+                document.getElementById('game-over').querySelector('h2').textContent = 'Game Over';
+            }
+        }
+
+        function nextLevel() {
+            gameState.level++;
+            gameState.relics = Math.min(50, 30 + (gameState.level - 1) * 2);
+            gameState.traps = Math.min(25, 15 + (gameState.level - 1));
+            gameState.scanners = 3;
+            gameState.timeLeft = 300;
+            createGrid();
+            updateHUD();
+        }
+
+        function useScanner(row, col) {
+            if (gameState.scanners > 0) {
+                gameState.scanners--;
+                for (let i = Math.max(0, row - 1); i <= Math.min(15, row + 1); i++) {
+                    for (let j = Math.max(0, col - 1); j <= Math.min(15, col + 1); j++) {
+                        if (gameState.grid[i][j].type === 'relic') {
+                            revealCell(i, j);
+                        }
+                    }
+                }
+                updateHUD();
+            }
+        }
+
+        // Event listeners
+        startGameBtn.addEventListener('click', () => {
+            mainMenu.style.display = 'none';
+            gameContainer.style.display = 'flex';
+            initializeGame();
+        });
+
+        showTutorialBtn.addEventListener('click', () => {
+            mainMenu.style.display = 'none';
+            tutorial.style.display = 'block';
+        });
+
+        closeTutorialBtn.addEventListener('click', () => {
+            tutorial.style.display = 'none';
+            mainMenu.style.display = 'block';
+        });
+
+        restartGameBtn.addEventListener('click', () => {
+            gameOver.style.display = 'none';
+            gameContainer.style.display = 'flex';
+            initializeGame();
+        });
+
+        // Initialize the game
+        initializeGame();
+    </script>
+</body>
+</html>
